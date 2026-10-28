@@ -1,9 +1,52 @@
+import smtplib
+from email.message import EmailMessage
 import streamlit as st
+
 import pandas as pd
 import joblib
 import plotly.express as px
 
+def send_high_risk_email(row):
+    try:
+        email_config = st.secrets["email"]
 
+        msg = EmailMessage()
+        msg["Subject"] = "🚨 HIGH RISK: Irrigation Pump Alert"
+        msg["From"] = email_config["sender"]
+        msg["To"] = email_config["receiver"]
+
+        timestamp = row.get("timestamp", "Not available")
+        action = row.get(
+            "recommended_action",
+            "Inspect the pump and review sensor readings."
+        )
+
+        msg.set_content(
+            f"""
+SMART IRRIGATION PUMP ALERT
+
+Risk Level: HIGH
+Timestamp: {timestamp}
+
+Maintenance Recommendation:
+{action}
+
+Please inspect the pump and verify its sensor readings.
+"""
+        )
+
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(
+                email_config["sender"],
+                email_config["app_password"]
+            )
+            server.send_message(msg)
+
+        return True, "HIGH-risk email sent successfully."
+
+    except Exception as e:
+        return False, f"Email failed: {e}"
 # ============================================================
 # PAGE CONFIG
 # ============================================================
@@ -164,6 +207,7 @@ Historical Water Pump Sensors
 )
 
 
+
 # ============================================================
 # DASHBOARD
 # ============================================================
@@ -186,76 +230,64 @@ if page == "Dashboard":
 
     st.markdown("---")
 
-    # --------------------------------------------------------
     # METRICS
-    # --------------------------------------------------------
-
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
-
-        st.metric(
-            "Asset ID",
-            asset_id
-        )
+        st.metric("Asset ID", asset_id)
 
     with c2:
-
-        st.metric(
-            "Health Score",
-            f"{health:.1f}/100"
-        )
+        st.metric("Health Score", f"{health:.1f}/100")
 
     with c3:
-
-        st.metric(
-            "Risk Level",
-            risk
-        )
+        st.metric("Risk Level", risk)
 
     with c4:
-
-        st.metric(
-            "Anomaly Score",
-            f"{anomaly:.4f}"
-        )
+        st.metric("Anomaly Score", f"{anomaly:.4f}")
 
     st.markdown("---")
 
-    # --------------------------------------------------------
-    # ALERT
-    # --------------------------------------------------------
-
+    # RISK ALERT
     if risk == "HIGH":
-
-        st.error(
-            "🚨 HIGH RISK — Immediate maintenance recommended."
-        )
-
+        st.error("🚨 HIGH RISK — Immediate maintenance recommended.")
     elif risk == "MEDIUM":
+        st.warning("⚠️ MEDIUM RISK — Inspection required.")
+    else:
+        st.success("✅ LOW RISK — Asset operating normally.")
+
+    # EMAIL ALERT
+    st.subheader("📧 HIGH-Risk Email Alert")
+
+    high_risk_rows = df[
+        df["risk_level"].astype(str).str.upper() == "HIGH"
+    ]
+
+    if not high_risk_rows.empty:
+        latest_high = high_risk_rows.iloc[-1]
 
         st.warning(
-            "⚠️ MEDIUM RISK — Inspection required."
+            f"High-risk pump event detected at "
+            f"{latest_high.get('timestamp', 'Unknown time')}"
         )
 
+        if st.button("Send HIGH-Risk Email"):
+            success, message = send_high_risk_email(latest_high)
+
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
     else:
+        st.success("No HIGH-risk records found in the dataset.")
 
-        st.success(
-            "✅ LOW RISK — Asset operating normally."
-        )
+    st.markdown("---")
 
-    # --------------------------------------------------------
     # HEALTH TREND
-    # --------------------------------------------------------
-
-    st.subheader(
-        "📈 AI Pump Health Trend"
-    )
+    st.subheader("📈 AI Pump Health Trend")
 
     daily_health = (
         df.set_index("timestamp")
-        .resample("D")
-        ["health_score"]
+        .resample("D")["health_score"]
         .mean()
         .reset_index()
     )
@@ -268,61 +300,30 @@ if page == "Dashboard":
         title="Daily Pump Health Score"
     )
 
-    fig.update_yaxes(
-        range=[0, 100]
-    )
+    fig.update_yaxes(range=[0, 100])
+    st.plotly_chart(fig, use_container_width=True)
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    # --------------------------------------------------------
     # LATEST SENSORS
-    # --------------------------------------------------------
-
-    st.subheader(
-        "📊 Latest Sensor Values"
-    )
+    st.subheader("📊 Latest Sensor Values")
 
     sensor_map = {
-        "Water Level":
-            "water_level_Water Level (mm)",
-
-        "Temperature":
-            "temp_vibration.temp",
-
-        "Pressure":
-            "pressure_in_pressure.ps5",
-
-        "Power P1":
-            "power_power.p1",
-
-        "Current I1":
-            "current_power.i1",
-
-        "X Vibration":
-            "x_speed_X_speed",
-
-        "Y Vibration":
-            "y_speed_Y_speed",
-
-        "Z Vibration":
-            "z_speed_Z_speed"
+        "Water Level": "water_level_Water Level (mm)",
+        "Temperature": "temp_vibration.temp",
+        "Pressure": "pressure_in_pressure.ps5",
+        "Power P1": "power_power.p1",
+        "Current I1": "current_power.i1",
+        "X Vibration": "x_speed_X_speed",
+        "Y Vibration": "y_speed_Y_speed",
+        "Z Vibration": "z_speed_Z_speed"
     }
 
     sensor_table = []
 
     for name, column in sensor_map.items():
-
         if column in df.columns:
-
             sensor_table.append({
                 "Sensor": name,
-                "Latest Value": round(
-                    float(latest[column]),
-                    3
-                )
+                "Latest Value": round(float(latest[column]), 3)
             })
 
     st.dataframe(
@@ -336,10 +337,6 @@ if page == "Dashboard":
 # ASSET MANAGEMENT
 # ============================================================
 
-# ============================================================
-# ASSET MANAGEMENT
-# ============================================================
-
 elif page == "Asset Management":
 
     from datetime import date
@@ -347,8 +344,9 @@ elif page == "Asset Management":
     import streamlit as st
 
     st.title("🔧 Asset Management")
-
     st.subheader("Installed Component Register")
+
+    # KEEP YOUR EXISTING ASSET MANAGEMENT CODE BELOW THIS LINE
 
     # Existing asset registry information
     asset_info = asset.iloc[0]
@@ -784,8 +782,159 @@ elif page == "Maintenance":
             "Continue routine monitoring and scheduled preventive maintenance."
         )
 
+   
     st.markdown("---")
-    st.subheader("Recent Maintenance Alerts")
+    st.subheader("🚨 Alert History")
+
+    # Prepare alert records
+    alerts = df.copy()
+
+    if "timestamp" in alerts.columns:
+        alerts["timestamp"] = pd.to_datetime(
+            alerts["timestamp"], errors="coerce"
+        )
+
+    if "risk_level_final" in alerts.columns:
+        alerts["risk_level_final"] = (
+            alerts["risk_level_final"]
+            .fillna("LOW")
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+    else:
+        alerts["risk_level_final"] = "LOW"
+
+    if "maintenance_status" in alerts.columns:
+        alerts["maintenance_status"] = (
+            alerts["maintenance_status"]
+            .fillna("NORMAL")
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+    else:
+        alerts["maintenance_status"] = "NORMAL"
+
+    alerts = alerts[
+        alerts["risk_level_final"].isin(["HIGH", "MEDIUM"])
+        | (alerts["maintenance_status"] != "NORMAL")
+    ].copy()
+
+    if not alerts.empty:
+        alerts["Recommended Action"] = alerts.apply(
+            recommend_action, axis=1
+        )
+
+        if "timestamp" in alerts.columns:
+            alerts = alerts.sort_values(
+                "timestamp", ascending=False
+            )
+
+        alerts = alerts.head(100).copy()
+
+        # Session-only alert status tracking
+        if "alert_statuses" not in st.session_state:
+            st.session_state["alert_statuses"] = {}
+
+        def get_alert_id(row):
+            return (
+                str(row.get("asset_id", "Unknown"))
+                + "|"
+                + str(row.get("timestamp", "Unknown"))
+                + "|"
+                + str(row.get("risk_level_final", "LOW"))
+            )
+
+        alerts["Alert ID"] = alerts.apply(get_alert_id, axis=1)
+
+        for alert_id in alerts["Alert ID"]:
+            if alert_id not in st.session_state["alert_statuses"]:
+                st.session_state["alert_statuses"][alert_id] = "Open"
+
+        alerts["Alert Status"] = alerts["Alert ID"].map(
+            st.session_state["alert_statuses"]
+        )
+
+        high_count = (
+            alerts["risk_level_final"] == "HIGH"
+        ).sum()
+
+        medium_count = (
+            alerts["risk_level_final"] == "MEDIUM"
+        ).sum()
+
+        open_count = (alerts["Alert Status"] == "Open").sum()
+        acknowledged_count = (
+            alerts["Alert Status"] == "Acknowledged"
+        ).sum()
+        resolved_count = (
+            alerts["Alert Status"] == "Resolved"
+        ).sum()
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("HIGH", int(high_count))
+        c2.metric("MEDIUM", int(medium_count))
+        c3.metric("Open", int(open_count))
+        c4.metric("Acknowledged", int(acknowledged_count))
+        c5.metric("Resolved", int(resolved_count))
+
+        st.dataframe(
+            alerts[
+                [
+                    col for col in [
+                        "timestamp",
+                        "asset_id",
+                        "health_score",
+                        "risk_level_final",
+                        "anomaly_score_final",
+                        "maintenance_status",
+                        "Recommended Action",
+                        "Alert Status",
+                    ]
+                    if col in alerts.columns
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("### Update an alert")
+
+        selected_alert = st.selectbox(
+            "Select alert",
+            options=alerts["Alert ID"].tolist(),
+            format_func=lambda alert_id: (
+                f"{alert_id} — "
+                f"{st.session_state['alert_statuses'][alert_id]}"
+            ),
+        )
+
+        new_status = st.selectbox(
+            "New status",
+            ["Open", "Acknowledged", "Resolved"],
+            key="new_alert_status",
+        )
+
+        if st.button("Save Alert Status"):
+            st.session_state["alert_statuses"][
+                selected_alert
+            ] = new_status
+            st.success(f"Alert status updated to {new_status}.")
+            st.rerun()
+
+        st.download_button(
+            "Download Alert History CSV",
+            data=alerts.drop(
+                columns=["Alert ID"], errors="ignore"
+            ).to_csv(index=False).encode("utf-8"),
+            file_name="smart_irrigation_alert_history.csv",
+            mime="text/csv",
+        )
+
+    else:
+        st.success("No HIGH- or MEDIUM-risk alerts found.")
+
 
     alerts = df.copy()
 
