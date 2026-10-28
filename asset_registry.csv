@@ -1,0 +1,2 @@
+asset_id,asset_name,asset_type,application,location,manufacturer,model,installation_date,warranty_start,warranty_end,service_contact,status
+NEWATER_PUMP_1,NeWater Pump 1,Non-Potable Water Pump,Smart Irrigation / Water Supply,NeWater System,Demo Asset Record,Pump-01,2023-07-01,2023-07-01,2025-06-30,Maintenance Department,Monitored
