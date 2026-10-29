@@ -35,8 +35,10 @@ Please inspect the pump and verify its sensor readings.
 """
         )
 
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as server:
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(
                 email_config["sender"],
                 email_config["app_password"]
@@ -259,7 +261,7 @@ if page == "Dashboard":
     st.subheader("📧 HIGH-Risk Email Alert")
 
     high_risk_rows = df[
-        df["risk_level"].astype(str).str.upper() == "HIGH"
+      df["risk_level_final"].astype(str).str.upper() == "HIGH"
     ]
 
     if not high_risk_rows.empty:
@@ -707,21 +709,7 @@ elif page == "Maintenance":
     else:
         risk = "LOW"
 
-    # Temporary debugging information
-    st.write("DEBUG — Total dataset rows:", len(df))
-    st.write("DEBUG — Last CSV row:")
-    st.dataframe(df.tail(1), use_container_width=True)
-
-    st.write("DEBUG — Risk counts:")
-    st.write(
-        df["risk_level_final"]
-        .fillna("LOW")
-        .astype(str)
-        .str.strip()
-        .str.upper()
-        .value_counts()
-    )
-
+ 
     # Display the current risk banner
     if risk == "HIGH":
         st.error(
